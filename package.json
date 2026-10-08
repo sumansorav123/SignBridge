@@ -1,0 +1,6 @@
+{
+  "name": "signbridge-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test tests/ai.test.mjs" }
+}
