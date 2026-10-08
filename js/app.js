@@ -5,6 +5,7 @@ import { startListening, speak, recognitionSupported } from "./speech.js";
 import { startTracking, drawSign, drawLive } from "./tracker.js";
 import { getLocalMedia, stopStream, makeCode, cleanCode, openTeacherSession, joinClass } from "./call.js";
 import { barChart, hBarChart } from "./charts.js";
+import { SignAvatar } from "./avatar.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) =>
@@ -611,7 +612,7 @@ async function joinFlow(user, code) {
   const stream = await getLocalMedia();
   const l = {
     role: "student", user, code, stream, session: null, dict: [], stab: new Stabiliser(), queue: [], playing: false,
-    lines: [], mySigns: [], captions: "", remoteStream: null, status: "Connected.", stopListen: null, tracking: false,
+    lines: [], mySigns: [], captions: "", remoteStream: null, status: "Connected.", stopListen: null, tracking: false, avatar: null,
   };
   try {
     l.session = await joinClass(code, stream, user.name, studentHandlers(l));
@@ -627,6 +628,7 @@ function leaveStudent(l, message) {
   clearTimeout(l.timer);
   l.stopListen?.();
   l.stopTrack?.();
+  l.avatar?.destroy?.();
   try {
     l.session.close();
   } catch {}
@@ -653,6 +655,9 @@ function studentHandlers(l) {
         const tokens = lookupTokens(text, l.dict);
         l.captions = text;
         l.lines.push({ at: Date.now(), text, tokens });
+        // Turn the teacher's natural-language sentence into a sequence of
+        // avatar gestures. The avatar runs locally for low latency.
+        l.avatar?.setText(text);
         if (live === l) {
           if ($("#captions")) $("#captions").textContent = text;
           if ($("#signs-log")) appendSignLine($("#signs-log"), l.lines[l.lines.length - 1]);
@@ -738,8 +743,10 @@ function studentClass(user) {
         <div class="captions" id="captions" aria-live="polite">${esc(l.captions)}</div>
         <div class="video pip"><div class="mirror"><video id="local-video" muted autoplay playsinline></video><canvas id="overlay"></canvas></div><span class="tag">You</span></div>
         <p class="small muted" id="track-status"></p></div>
-      <div class="card"><h2>Teacher's words as signs</h2>
-        <div class="stage" id="stage" aria-live="polite"><span class="muted">Signs appear here when your teacher speaks.</span></div>
+      <div class="card"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2 style="margin-bottom:.15rem">3D Sign Avatar</h2><p class="small muted" style="margin:.1rem 0">Natural speech → sign sequence → animated hand posture</p></div><span class="avatar-live"><i></i> LIVE</span></div>
+        <div class="avatar-shell" id="avatar" aria-label="3D sign language avatar"></div>
+        <div class="avatar-now"><span class="small muted">Now signing</span><strong id="avatar-word">Ready</strong></div>
+        <div class="stage" id="stage" aria-live="polite"><span class="muted">The detailed sign preview appears here.</span></div>
         <div class="log" id="signs-log" aria-label="Sign history"></div>
         <p class="small muted" id="dict-count">${esc(dictText(l))}</p>
         <h2>Your signs</h2><div class="log" id="my-signs" aria-label="Signs you made"></div>
@@ -753,6 +760,8 @@ function studentClass(user) {
   l.lines.forEach((ln) => appendSignLine($("#signs-log"), ln));
   l.mySigns.forEach((s) => appendMySign($("#my-signs"), s));
   if (l.current) renderStage(l.current);
+  l.avatar = new SignAvatar($("#avatar"));
+  l.avatar.onChange = (word) => { if (live === l && $("#avatar-word")) $("#avatar-word").textContent = word; };
   $("#btn-leave").addEventListener("click", () => leaveStudent(l, "You left the class."));
 
   $("#btn-mic").addEventListener("click", () => {
